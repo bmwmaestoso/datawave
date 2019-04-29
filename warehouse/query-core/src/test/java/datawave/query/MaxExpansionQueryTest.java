@@ -7,14 +7,15 @@ import datawave.query.testframework.AccumuloSetupHelper;
 import datawave.query.testframework.CitiesDataType;
 import datawave.query.testframework.CitiesDataType.CityEntry;
 import datawave.query.testframework.CitiesDataType.CityField;
-import datawave.query.testframework.GenericCityFields;
 import datawave.query.testframework.DataTypeHadoopConfig;
 import datawave.query.testframework.FieldConfig;
+import datawave.query.testframework.GenericCityFields;
 import org.apache.log4j.Logger;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Set;
@@ -138,6 +139,9 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         } catch (FullTableScansDisallowedException e) {
             // expected
         }
+        
+        ivaratorConfig();
+        runTest(query, expect);
     }
     
     @Test
@@ -155,13 +159,14 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         
         this.logic.setCollapseUids(true);
         this.logic.setMaxOrExpansionThreshold(1);
+        this.logic.setMaxValueExpansionThreshold(1);
         ivaratorConfig();
         runTest(query, query);
     }
     
     @Test
     public void testMaxValueOrFst() throws Exception {
-        log.info("------  testMaxValueOr  ------");
+        log.info("------  testMaxValueOrFst  ------");
         String spain = "'spain'";
         String france = "'france'";
         String usa = "'united states'";
@@ -169,6 +174,36 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         String query = CityField.COUNTRY.name() + EQ_OP + spain + OR_OP + CityField.COUNTRY.name() + EQ_OP + france + OR_OP + CityField.COUNTRY.name() + EQ_OP
                         + usa + OR_OP + CityField.COUNTRY.name() + EQ_OP + italy;
         
+        // query should work without OR thresholds
+        runTest(query, query);
+        
+        this.logic.setCollapseUids(true);
+        this.logic.setMaxOrExpansionThreshold(1);
+        this.logic.setMaxOrExpansionFstThreshold(1);
+        ivaratorConfig();
+        ivaratorFstConfig();
+        runTest(query, query);
+    }
+    
+    @Test
+    public void testMaxValueOrFstNonIndexed() throws Exception {
+        log.info("------  testMaxValueOrFstNonIndexed  ------");
+        String spain = "'spain'";
+        String france = "'france'";
+        String usa = "'united states'";
+        String italy = "'italy'";
+        String paris = "'ParIs'";
+        String venice = "'veNiCe'";
+        String turin = "'TuriN'";
+        // @formatter:off
+        String query = "(" + CityField.CITY.name() + EQ_OP + paris + OR_OP +
+                CityField.CITY.name() + EQ_OP + venice + OR_OP +
+                CityField.CITY.name() + EQ_OP + turin + ")" + AND_OP +
+                "(" + CityField.COUNTRY.name() + EQ_OP + spain + OR_OP +
+                CityField.COUNTRY.name() + EQ_OP + france + OR_OP +
+                CityField.COUNTRY.name() + EQ_OP + usa + OR_OP +
+                CityField.COUNTRY.name() + EQ_OP + italy + ")";
+        //@formatter:on
         // query should work without OR thresholds
         runTest(query, query);
         
@@ -237,8 +272,6 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         }
         
         ivaratorConfig(3, false);
-        this.logic.setMaxOrExpansionThreshold(1);
-        this.logic.setMaxOrExpansionFstThreshold(1);
         runTest(query, query);
     }
     
@@ -260,6 +293,9 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         } catch (DatawaveFatalQueryException e) {
             // expected
         }
+        
+        ivaratorConfig();
+        runTest(query, query);
     }
     
     @Test
@@ -271,6 +307,13 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         runTest(query, expect);
         
         this.logic.setMaxValueExpansionThreshold(1);
+        try {
+            runTest(query, expect);
+            Assert.fail("exception expected");
+        } catch (FullTableScansDisallowedException e) {
+            // expected
+        }
+        
         ivaratorConfig();
         runTest(query, expect);
     }
@@ -285,6 +328,13 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         runTest(query, expect);
         
         this.logic.setMaxValueExpansionThreshold(1);
+        try {
+            runTest(query, expect);
+            Assert.fail("exception expected");
+        } catch (FullTableScansDisallowedException e) {
+            // expected
+        }
+        
         ivaratorConfig();
         runTest(query, expect);
     }
@@ -301,7 +351,15 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         this.logic.setMaxValueExpansionThreshold(10);
         runTest(query, expect);
         
+        this.logic.setQueryThreads(1);
         this.logic.setMaxValueExpansionThreshold(1);
+        try {
+            runTest(query, expect);
+            Assert.fail("exception expected");
+        } catch (RuntimeException re) {
+            // expected
+        }
+        
         ivaratorConfig();
         runTest(query, expect);
     }
@@ -309,16 +367,26 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
     @Test
     public void testMaxValueAnyFieldOne() throws Exception {
         log.info("------  testMaxValueAnyFieldOne  ------");
-        String regexPhrase = RE_OP + "'ma.*'";
-        String state = "'Maine'";
-        String query = Constants.ANY_FIELD + regexPhrase + AND_OP + Constants.ANY_FIELD + EQ_OP + state;
-        String anyState = this.dataManager.convertAnyField(regexPhrase);
-        String expect = anyState + AND_OP + CityField.STATE.name() + EQ_OP + state;
+        String miPhrase = RE_OP + "'mi.*'";
+        String usaPhrase = EQ_OP + "'uSa'";
+        String query = Constants.ANY_FIELD + miPhrase + AND_OP + Constants.ANY_FIELD + usaPhrase;
+        String anyMi = this.dataManager.convertAnyField(miPhrase);
+        String anyUsa = this.dataManager.convertAnyField(usaPhrase);
+        String expect = anyMi + AND_OP + anyUsa;
         
         this.logic.setMaxValueExpansionThreshold(5);
         runTest(query, expect);
         
+        this.logic.setQueryThreads(1);
         this.logic.setMaxValueExpansionThreshold(1);
+        // does this test the condition
+        // try {
+        // runTest(query, expect);
+        // Assert.fail("exception expected");
+        // } catch (RuntimeException re) {
+        // //expected
+        // }
+        
         ivaratorConfig();
         runTest(query, expect);
     }
@@ -326,16 +394,26 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
     @Test
     public void testMaxValueAnyFieldTwo() throws Exception {
         log.info("------  testMaxValueAnyFieldTwo  ------");
-        String regexPhrase = RE_OP + "'m.*'";
-        String state = "'Missouri'";
-        String query = Constants.ANY_FIELD + regexPhrase + AND_OP + Constants.ANY_FIELD + EQ_OP + state;
-        String anyState = this.dataManager.convertAnyField(regexPhrase);
-        String expect = anyState + AND_OP + CityField.STATE.name() + EQ_OP + state;
+        String mPhrase = RE_OP + "'m.*'";
+        String francePhrase = EQ_OP + "'missouri'";
+        String query = Constants.ANY_FIELD + mPhrase + AND_OP + Constants.ANY_FIELD + francePhrase;
+        String anyM = this.dataManager.convertAnyField(mPhrase);
+        String anyfrance = this.dataManager.convertAnyField(francePhrase);
+        String expect = anyM + AND_OP + anyfrance;
         
         this.logic.setMaxValueExpansionThreshold(5);
         runTest(query, expect);
         
+        this.logic.setQueryThreads(1);
         this.logic.setMaxValueExpansionThreshold(1);
+        // does this test the condition
+        // try {
+        // runTest(query, expect);
+        // Assert.fail("exception expected");
+        // } catch (RuntimeException re) {
+        // //expected
+        // }
+        
         ivaratorConfig();
         runTest(query, expect);
     }
@@ -353,6 +431,50 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         runTest(query, expect);
         
         this.logic.setMaxValueExpansionThreshold(1);
+        // does this test the condition
+        // try {
+        // runTest(query, expect);
+        // Assert.fail("exception expected");
+        // } catch (RuntimeException re) {
+        // //expected
+        // }
+        
+        ivaratorConfig();
+        runTest(query, expect);
+    }
+    
+    @Test
+    public void testMaxValueAnyFieldNegAnd() throws Exception {
+        log.info("------  testMaxValueNegAnyFieldIndexOnlyOne  ------");
+        String regexPhrase = RE_OP + "'eU.*'";
+        String anyEU = this.dataManager.convertAnyField(regexPhrase);
+        String country = "'iTa'";
+        String anyITA = this.dataManager.convertAnyField(EQ_OP + country);
+        String city = "'RomE'";
+        // @formatter:off
+        String query = Constants.ANY_FIELD + EQ_OP + country
+                + AND_OP +
+                "not(" + Constants.ANY_FIELD + regexPhrase +
+                AND_OP +
+                CityField.CITY.name() + EQ_OP + city + ")";
+        String expect = anyITA +
+                AND_OP +
+                "not (" + anyEU +
+                AND_OP +
+                CityField.CITY.name() + EQ_OP + city + ")";
+        // @formatter:on
+        
+        this.logic.setMaxValueExpansionThreshold(10);
+        runTest(query, expect);
+        
+        this.logic.setMaxValueExpansionThreshold(1);
+        // does this test the condition
+        // try {
+        // runTest(query, expect);
+        // Assert.fail("exception expected");
+        // } catch (RuntimeException re) {
+        // //expected
+        // }
         ivaratorConfig();
         runTest(query, expect);
     }
@@ -370,9 +492,17 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         this.logic.setMaxValueExpansionThreshold(5);
         runTest(query, expect);
         
-        // this.logic.setMaxValueExpansionThreshold(1);
-        // ivaratorConfig();
+        this.logic.setMaxValueExpansionThreshold(1);
+        // does this test the condition
+        // try {
         // runTest(query, expect);
+        // Assert.fail("exception expected");
+        // } catch (RuntimeException re) {
+        // //expected
+        // }
+        
+        ivaratorConfig();
+        runTest(query, expect);
     }
     
     @Test
@@ -388,6 +518,12 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         runTest(query, expect);
         
         this.logic.setMaxValueExpansionThreshold(1);
+        try {
+            runTest(query, expect);
+            Assert.fail("exception expected");
+        } catch (RuntimeException re) {
+            // expected
+        }
         ivaratorConfig();
         runTest(query, expect);
     }
@@ -405,6 +541,13 @@ public class MaxExpansionQueryTest extends AbstractFunctionalQuery {
         runTest(query, expect);
         
         this.logic.setMaxValueExpansionThreshold(1);
+        try {
+            runTest(query, expect);
+            Assert.fail("exception expected");
+        } catch (RuntimeException re) {
+            // expected
+        }
+        
         ivaratorConfig();
         runTest(query, expect);
     }

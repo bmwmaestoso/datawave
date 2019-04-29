@@ -111,6 +111,21 @@ public class PushdownQueryTest extends AbstractFunctionalQuery {
         }
     }
     
+    @Test
+    public void testFilterIncludeRegex() throws Exception {
+        log.info("------  testFilterIncludeRegex  ------");
+        // this is the same as testErrorFilterincludeRegex - except expansion is enabled
+        String state = "'.oh*'";
+        String code = "'itA'";
+        for (final TestCities city : TestCities.values()) {
+            String query = CityField.CITY.name() + EQ_OP + "'" + city.name() + "'" + AND_OP + "(" + CityField.CODE.name() + EQ_OP + code + OR_OP
+                            + "filter:includeRegex(" + CityField.STATE.name() + "," + state + "))";
+            String expectQuery = CityField.CITY.name() + EQ_OP + "'" + city.name() + "'" + AND_OP + "(" + CityField.CODE.name() + EQ_OP + code + OR_OP
+                            + CityField.STATE.name() + RE_OP + state + ")";
+            runTest(query, expectQuery);
+        }
+    }
+    
     // ============================================
     // error conditions
     @Test(expected = InvalidQueryException.class)
